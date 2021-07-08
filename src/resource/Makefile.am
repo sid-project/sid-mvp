@@ -38,6 +38,7 @@ resource_HEADERS = $(top_builddir)/src/include/resource/resource.h \
 		   $(top_builddir)/src/include/resource/worker-control.h
 
 libsidresource_la_CFLAGS = $(SYSTEMD_CFLAGS) \
+			   $(ELOGIND_CFLAGS) \
 			   $(UDEV_CFLAGS)
 
 libsidresource_la_LDFLAGS = -version-info 0:0:0
@@ -47,6 +48,7 @@ libsidresource_la_LIBADD = $(top_builddir)/src/base/libsidbase.la \
 			   $(top_builddir)/src/iface/libsidiface.la \
 			   $(top_builddir)/src/log/libsidlog.la \
 			   $(SYSTEMD_LIBS) \
+			   $(ELOGIND_LIBS) \
 			   $(UDEV_LIBS) \
 			   -ldl
 
