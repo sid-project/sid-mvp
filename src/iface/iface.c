@@ -21,8 +21,8 @@
 #include "base/comms.h"
 #include "base/util.h"
 #include "iface/iface_internal.h"
-#include "log/log.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -48,7 +48,7 @@ void sid_result_free(struct sid_result *res)
 	if (!res)
 		return;
 	if (res->buf)
-		buffer_destroy(res->buf);
+		sid_buffer_destroy(res->buf);
 	if (res->shm != MAP_FAILED)
 		munmap((void *) res->shm, res->shm_len);
 	free(res);
@@ -61,7 +61,7 @@ int sid_result_status(struct sid_result *res, uint64_t *status)
 
 	if (!res || !status)
 		return -EINVAL;
-	buffer_get_data(res->buf, (const void **) &hdr, &size);
+	sid_buffer_get_data(res->buf, (const void **) &hdr, &size);
 	*status = hdr->status;
 	return 0;
 }
@@ -73,7 +73,7 @@ int sid_result_protocol(struct sid_result *res, uint8_t *prot)
 
 	if (!res || !prot)
 		return -EINVAL;
-	buffer_get_data(res->buf, (const void **) &hdr, &size);
+	sid_buffer_get_data(res->buf, (const void **) &hdr, &size);
 	*prot = hdr->prot;
 	return 0;
 }
@@ -89,7 +89,7 @@ const char *sid_result_data(struct sid_result *res, size_t *size_p)
 	if (!res)
 		return NULL;
 
-	buffer_get_data(res->buf, (const void **) &hdr, &size);
+	sid_buffer_get_data(res->buf, (const void **) &hdr, &size);
 	if (hdr->status & SID_CMD_STATUS_FAILURE)
 		return NULL;
 	else if (res->shm != MAP_FAILED) {
@@ -126,18 +126,18 @@ static int _add_devt_env_to_buffer(struct buffer *buf)
 	dev_t              devnum;
 	int                r;
 
-	if ((r = util_env_get_ull(KEY_ENV_MAJOR, 0, SYSTEM_MAX_MAJOR, &val)) < 0)
+	if ((r = sid_util_env_get_ull(KEY_ENV_MAJOR, 0, SYSTEM_MAX_MAJOR, &val)) < 0)
 		return r;
 
 	major = val;
 
-	if ((r = util_env_get_ull(KEY_ENV_MINOR, 0, SYSTEM_MAX_MINOR, &val)) < 0)
+	if ((r = sid_util_env_get_ull(KEY_ENV_MINOR, 0, SYSTEM_MAX_MINOR, &val)) < 0)
 		return r;
 
 	minor = val;
 
 	devnum = makedev(major, minor);
-	buffer_add(buf, &devnum, sizeof(devnum), &r);
+	sid_buffer_add(buf, &devnum, sizeof(devnum), &r);
 
 	return r;
 }
@@ -154,7 +154,7 @@ static int _add_checkpoint_env_to_buf(struct buffer *buf, struct sid_checkpoint_
 		goto out;
 
 	/* add checkpoint name */
-	if (!buffer_add(buf, data->name, strlen(data->name) + 1, &r))
+	if (!sid_buffer_add(buf, data->name, strlen(data->name) + 1, &r))
 		goto out;
 
 	/* add key=value pairs from current environment */
@@ -163,7 +163,7 @@ static int _add_checkpoint_env_to_buf(struct buffer *buf, struct sid_checkpoint_
 		if (!(val = getenv(key)))
 			continue;
 
-		if (!buffer_fmt_add(buf, &r, "%s=%s", key, val))
+		if (!sid_buffer_fmt_add(buf, &r, "%s=%s", key, val))
 			goto out;
 	}
 
@@ -182,7 +182,7 @@ static int _add_scan_env_to_buf(struct buffer *buf)
 		goto out;
 
 	for (kv = environ; *kv; kv++)
-		if (!buffer_add(buf, *kv, strlen(*kv) + 1, &r))
+		if (!sid_buffer_add(buf, *kv, strlen(*kv) + 1, &r))
 			goto out;
 out:
 	return r;
@@ -211,15 +211,15 @@ int sid_req(struct sid_request *req, struct sid_result **res_p)
 	res->shm     = MAP_FAILED;
 	res->shm_len = 0;
 
-	if (!(buf = buffer_create(&((struct buffer_spec) {.backend = BUFFER_BACKEND_MALLOC,
-	                                                  .type    = BUFFER_TYPE_LINEAR,
-	                                                  .mode    = BUFFER_MODE_SIZE_PREFIX}),
-	                          &((struct buffer_init) {.size = 0, .alloc_step = 1, .limit = 0}),
-	                          &r)))
+	if (!(buf = sid_buffer_create(&((struct buffer_spec) {.backend = BUFFER_BACKEND_MALLOC,
+	                                                      .type    = BUFFER_TYPE_LINEAR,
+	                                                      .mode    = BUFFER_MODE_SIZE_PREFIX}),
+	                              &((struct buffer_init) {.size = 0, .alloc_step = 1, .limit = 0}),
+	                              &r)))
 		goto out;
 	res->buf = buf;
 
-	if (!buffer_add(
+	if (!sid_buffer_add(
 		    buf,
 		    &((struct sid_msg_header) {.status = req->seqnum, .prot = SID_PROTOCOL, .cmd = req->cmd, .flags = req->flags}),
 		    SID_MSG_HEADER_SIZE,
@@ -232,7 +232,7 @@ int sid_req(struct sid_request *req, struct sid_result **res_p)
 			r = -EINVAL;
 			goto out;
 		}
-		if (data->size > 0 && !buffer_add(buf, (void *) data->mem, data->size, &r))
+		if (data->size > 0 && !sid_buffer_add(buf, (void *) data->mem, data->size, &r))
 			goto out;
 	} else {
 		switch (req->cmd) {
@@ -250,22 +250,22 @@ int sid_req(struct sid_request *req, struct sid_result **res_p)
 		}
 	}
 
-	if ((socket_fd = comms_unix_init(SID_SOCKET_PATH, SID_SOCKET_PATH_LEN, SOCK_STREAM | SOCK_CLOEXEC)) < 0) {
+	if ((socket_fd = sid_comms_unix_init(SID_SOCKET_PATH, SID_SOCKET_PATH_LEN, SOCK_STREAM | SOCK_CLOEXEC)) < 0) {
 		r = socket_fd;
 		goto out;
 	}
 
-	if ((n = buffer_write_all(buf, socket_fd)) < 0) {
+	if ((n = sid_buffer_write_all(buf, socket_fd)) < 0) {
 		r = n;
 		goto out;
 	}
 
-	buffer_reset(buf);
+	sid_buffer_reset(buf);
 
 	for (;;) {
-		n = buffer_read(buf, socket_fd);
+		n = sid_buffer_read(buf, socket_fd);
 		if (n > 0) {
-			if (buffer_is_complete(buf, NULL)) {
+			if (sid_buffer_is_complete(buf, NULL)) {
 				r = 0;
 				break;
 			}
@@ -275,14 +275,14 @@ int sid_req(struct sid_request *req, struct sid_result **res_p)
 			r = n;
 			goto out;
 		} else {
-			if (!buffer_is_complete(buf, NULL)) {
+			if (!sid_buffer_is_complete(buf, NULL)) {
 				r = -EBADMSG;
 				goto out;
 			}
 			break;
 		}
 	}
-	if (buffer_stat(buf).usage.used < SID_MSG_HEADER_SIZE) {
+	if (sid_buffer_stat(buf).usage.used < SID_MSG_HEADER_SIZE) {
 		r = -EBADMSG;
 		goto out;
 	}
@@ -291,7 +291,7 @@ int sid_req(struct sid_request *req, struct sid_result **res_p)
 		BUFFER_SIZE_PREFIX_TYPE msg_size;
 
 		for (;;) {
-			n = comms_unix_recv(socket_fd, &byte, sizeof(byte), &export_fd);
+			n = sid_comms_unix_recv(socket_fd, &byte, sizeof(byte), &export_fd);
 			if (n >= 0)
 				break;
 			if (n == -EAGAIN || n == -EINTR)
@@ -299,7 +299,7 @@ int sid_req(struct sid_request *req, struct sid_result **res_p)
 			r = n;
 			goto out;
 		}
-		if ((n = util_fd_read_all(export_fd, &msg_size, BUFFER_SIZE_PREFIX_LEN)) != BUFFER_SIZE_PREFIX_LEN) {
+		if ((n = sid_util_fd_read_all(export_fd, &msg_size, BUFFER_SIZE_PREFIX_LEN)) != BUFFER_SIZE_PREFIX_LEN) {
 			if (n < 0)
 				r = n;
 			else

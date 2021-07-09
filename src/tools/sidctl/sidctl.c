@@ -20,10 +20,9 @@
 #include "base/common.h"
 
 #include "base/buffer.h"
-#include "base/util.h"
 #include "iface/iface.h"
+#include "internal/formatter.h"
 #include "log/log.h"
-#include "resource/ucmd-module.h"
 
 #include <getopt.h>
 #include <inttypes.h>
@@ -75,7 +74,7 @@ static int _sid_cmd_version(uint16_t format)
 	struct buffer *outbuf = NULL;
 	int            r;
 
-	outbuf = buffer_create(
+	outbuf = sid_buffer_create(
 		&((struct buffer_spec) {.backend = BUFFER_BACKEND_MALLOC, .type = BUFFER_TYPE_LINEAR, .mode = BUFFER_MODE_PLAIN}),
 		&((struct buffer_init) {.size = 4096, .alloc_step = 1, .limit = 0}),
 		NULL);
@@ -92,9 +91,9 @@ static int _sid_cmd_version(uint16_t format)
 	print_uint_field(KEY_SIDCTL_RELEASE, SID_VERSION_RELEASE, format, outbuf, 0, 1);
 	print_end_elem(format, outbuf, 0);
 	print_elem_name(true, "SID_VERSION", format, outbuf, 0);
-	if ((r = buffer_write_all(outbuf, fileno(stdout))) < 0)
+	if ((r = sid_buffer_write_all(outbuf, fileno(stdout))) < 0)
 		log_error_errno(LOG_PREFIX, r, "failed to write version information");
-	buffer_reset(outbuf);
+	sid_buffer_reset(outbuf);
 	if ((r = _sid_cmd(SID_CMD_VERSION, format)) < 0) {
 		print_start_document(format, outbuf, 0);
 		print_end_document(format, outbuf, 0);
@@ -102,9 +101,9 @@ static int _sid_cmd_version(uint16_t format)
 		fflush(stdout);
 	print_end_document(format, outbuf, 0);
 
-	if ((r = buffer_write_all(outbuf, fileno(stdout))) < 0)
+	if ((r = sid_buffer_write_all(outbuf, fileno(stdout))) < 0)
 		log_error_errno(LOG_PREFIX, r, "failed to write output ending");
-	buffer_destroy(outbuf);
+	sid_buffer_destroy(outbuf);
 	return r;
 }
 
